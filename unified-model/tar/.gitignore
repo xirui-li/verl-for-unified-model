@@ -1,27 +1,18 @@
-
-**/*.pt
-**/checkpoints
-**/wget-log
-**/_build/
-**/*.ckpt
-**/outputs
-**/*.tar.gz
-**/playground
-**/wandb
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
-dataset/*
-tensorflow/my_graph/*
-.idea/
+
+# others
+.vscode/
+
+
 # C extensions
 *.so
 
 # Distribution / packaging
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -33,10 +24,13 @@ lib64/
 parts/
 sdist/
 var/
-tmp/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -51,13 +45,16 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+.nox/
 .coverage
 .coverage.*
 .cache
 nosetests.xml
 coverage.xml
-*,cover
+*.cover
+*.py,cover
 .hypothesis/
+.pytest_cache/
 
 # Translations
 *.mo
@@ -66,6 +63,8 @@ coverage.xml
 # Django stuff:
 *.log
 local_settings.py
+db.sqlite3
+db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -80,47 +79,40 @@ docs/_build/
 # PyBuilder
 target/
 
-# IPython Notebook
+# Jupyter Notebook
 .ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
 
 # pyenv
 .python-version
 
-# celery beat schedule file
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+__pypackages__/
+
+# Celery stuff
 celerybeat-schedule
+celerybeat.pid
 
-# dotenv
-.env
+# output
+runs/
+ckpts/
+*.pt
+*.pth
 
-# virtualenv
-venv/
-.venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-
-# Rope project settings
-.ropeproject
-
-# vscode
-.vscode
-
-# Mac
-.DS_Store
-
-# vim
-*.swp
-
-# ckpt
-*.lock
-
-# data
+*.pb
+*.npz
+dpg_bench
+geneval
 *.parquet
-
-
-# local logs
-logs
-log
-outputs
-.history
+output_dir
+wandb
