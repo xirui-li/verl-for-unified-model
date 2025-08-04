@@ -484,6 +484,9 @@ class ARModel(nn.Module):
 
     @classmethod
     def from_checkpoint(cls, ckpt, load_state_dict=True):
+        from easydict import EasyDict
+        import torch.serialization
+        torch.serialization.add_safe_globals([EasyDict])
         if isinstance(ckpt, str):
             assert os.path.exists(ckpt), f"checkpoint {ckpt} does not exist"
             ckpt = torch.load(ckpt, map_location=lambda storage, loc: storage)

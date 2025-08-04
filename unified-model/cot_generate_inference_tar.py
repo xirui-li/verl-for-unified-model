@@ -16,7 +16,7 @@ model_path = 'csuhan/Tar-1.5B'
 vl_chat_processor: VLChatProcessor = VLChatProcessor.from_pretrained(model_path, trust_remote_code=True)
 tokenizer = vl_chat_processor.tokenizer
 
-vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
+vl_gpt = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True
 )
 
@@ -57,3 +57,7 @@ gen_ids = vl_gpt.generate(
 # Process generated tokens
 gen_text = vl_chat_processor.tokenizer.batch_decode(gen_ids)[0]
 image = vl_chat_processor.decode_text_to_image(generated_text=gen_text)
+
+# Save the generated image
+output_image_path = os.path.join(os.getcwd(), "generated_image.png")
+image.save(output_image_path)

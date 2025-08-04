@@ -235,8 +235,35 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         # note that we have to create model in fp32. Otherwise, the optimizer is in bf16, which is incorrect
         # TODO(zhangchi.usc1992): 1. support create from random initialized model. 2. Support init with FSDP directly
-        self.tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-        self.processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
+        if 'tar' in local_path.lower():  # tar model support
+            from tar.models import VLChatProcessor
+            from tar.models.config import T2IConfig
+            from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2ForCausalLM
+            device = 'cuda'
+            self.t2i_config = T2IConfig(device=device)  # This preserves all other defaults
+            
+            # Initialize processor and tokenizer
+            self.processor = VLChatProcessor.from_pretrained(local_path, trust_remote_code=trust_remote_code)
+            self.tokenizer = self.processor.tokenizer
+            
+            # Initialize generation config
+            self.generation_config = get_generation_config(local_path, trust_remote_code=trust_remote_code)
+            self.generation_config.pad_token_id = self.tokenizer.pad_token_id
+            self.generation_config.eos_token_id = self.tokenizer.eos_token_id
+            
+            # Use T2I config's cfg_scale instead of cfg_weight if applicable
+            self.generation_config.cfg_scale = self.t2i_config.cfg_scale
+            
+            OmegaConf.set_struct(self.config.rollout, True)
+            with open_dict(self.config.rollout):
+                # Map cfg_scale from T2IConfig to rollout config
+                self.config.rollout.cfg_scale = self.t2i_config.cfg_scale
+                
+        else:
+            self.tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+            self.processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
+
+            self.generation_config = get_generation_config(local_path, trust_remote_code=trust_remote_code)
 
         if self.config.model.get("custom_chat_template", None) is not None:
             if self.processor is not None:
@@ -251,6 +278,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             torch_dtype = PrecisionType.to_dtype(torch_dtype)
 
         # override model kwargs
+        print("=" * 20 + " Model Config Override " + "=" * 20)
+        print("local path:", local_path )
         actor_model_config = AutoConfig.from_pretrained(
             local_path, trust_remote_code=trust_remote_code, attn_implementation="flash_attention_2"
         )
@@ -258,8 +287,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # patch for kimi-vl
         if getattr(actor_model_config, "model_type", None) == "kimi_vl":
             actor_model_config.text_config.topk_method = "greedy"
-
-        self.generation_config = get_generation_config(local_path, trust_remote_code=trust_remote_code)
 
         override_config_kwargs = {
             "bos_token_id": self.tokenizer.bos_token_id,

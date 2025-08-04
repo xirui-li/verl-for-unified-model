@@ -1,7 +1,7 @@
 # tar_chat_processor.py
 
 from dataclasses import dataclass
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Optional
 from PIL import Image
 import torch
 import re
@@ -12,12 +12,43 @@ from .image_processing_vlm import VLMImageProcessor
 from ..tok.mm_autoencoder import MMAutoEncoder
 from .config import T2IConfig
 
+from dataclasses import dataclass, asdict, field
 
 @dataclass
 class TarProcessorOutput:
     input_ids: torch.Tensor
-    pixel_values: Union[torch.Tensor, None]
+    attention_mask: torch.Tensor
     prompt_text: str
+    pixel_values: Optional[torch.Tensor] = field(default=None)
+
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __contains__(self, key):
+        return hasattr(self, key)
+
+    def pop(self, key, default=None):
+        if hasattr(self, key):
+            val = getattr(self, key)
+            setattr(self, key, None)
+            return val
+        if default is not None:
+            return default
+        raise KeyError(f"{key} not found in TarProcessorOutput")
+
+    def __iter__(self):
+        return iter(asdict(self))  # Allows iteration over keys
+
+    def items(self):
+        return asdict(self).items()
+
+    def keys(self):
+        return asdict(self).keys()
+
+    def values(self):
+        return asdict(self).values()
+        
 
 class VLChatProcessor(ProcessorMixin):
     image_processor_class = "TarImageProcessor"
@@ -30,7 +61,7 @@ class VLChatProcessor(ProcessorMixin):
         image_processor: VLMImageProcessor,
         tokenizer: PreTrainedTokenizer,
         sft_format: str = "tar",
-        system_prompt: str = "You are a helpful vision-language assistant.",
+        system_prompt: str = "You are a helpful assistant.",
     ):
         self.image_processor = image_processor
         self.tokenizer = tokenizer
@@ -53,7 +84,7 @@ class VLChatProcessor(ProcessorMixin):
             encoder_path=encoder_path,
             decoder_path=decoder_path,
         )
-                # Initialize visual tokenizer
+
         config = dict(
             ar_path=T2I_config.ar_path,
             encoder_path=T2I_config.encoder_path,
@@ -62,7 +93,24 @@ class VLChatProcessor(ProcessorMixin):
             decoder_args={},
         )
 
-        image_processor = MMAutoEncoder(**config).eval().to(dtype=T2I_config.dtype, device=T2I_config.device) # can modify device here
+        # === Safe GPU allocation ===
+        if torch.cuda.is_available():
+            device = 'cuda'
+        else:
+            device = 'cpu'
+            print("[Warning] CUDA not available in Ray worker. Using CPU for image processor. Expect slower rollouts.")
+
+        try:
+            image_processor = MMAutoEncoder(**config).eval().to(device=device)
+        except RuntimeError as e:
+            print(f"[Error] Failed to move MMAutoEncoder to {device}: {e}")
+            print("[Fallback] Forcing CPU...")
+            image_processor = MMAutoEncoder(**config).eval().to(device='cpu')
+
+        # === Freeze parameters ===
+        for param in image_processor.parameters():
+            param.requires_grad = False
+
         image_processor.ar_model.cls_token_num = T2I_config.seq_len
         image_processor.encoder.pool_scale = T2I_config.scale + 1
 
@@ -73,33 +121,64 @@ class VLChatProcessor(ProcessorMixin):
         prompt: str = None,
         conversations: List[Dict[str, str]] = None,
         images: List[Image.Image] = None,
+        videos: List = None  # placeholder
     ) -> TarProcessorOutput:
-        """Processes a single input for TAR."""
         assert prompt or conversations, "Need either `prompt` or `conversations`"
 
         if prompt is None:
             prompt = self.apply_sft_template_for_multi_turn_prompts(conversations)
 
-        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").squeeze(0)
+        prompt += f"<im_start><S{self.config.scale}>"
+
+        # print(self.tokenizer.encode(prompt, return_tensors="pt"))
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
 
         pixel_values = None
         if images is not None:
             pixel_values = self.image_processor(images, return_tensors="pt")["pixel_values"]
 
-        return TarProcessorOutput(
-            input_ids=input_ids,
-            pixel_values=pixel_values,
-            prompt_text=prompt,
-        )
+        # Placeholder: future support for videos
+        # You can log, validate, or prepare preprocessor for later
+        if videos is not None:
+            print("[Debug] Received videos (ignored for now):", type(videos), len(videos) if hasattr(videos, '__len__') else "N/A")
 
-    def __call__(
-        self,
-        *,
-        prompt: str = None,
-        conversations: List[Dict[str, str]] = None,
-        images: List[Image.Image] = None,
-    ):
-        return self.process_one(prompt=prompt, conversations=conversations, images=images)
+
+        kwargs = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "prompt_text": prompt,
+        }
+
+        if images is not None and len(images) > 0:
+            pixel_values = self.image_processor(images, return_tensors="pt")["pixel_values"]
+            kwargs["pixel_values"] = pixel_values
+
+        return TarProcessorOutput(**kwargs)
+
+    def __call__(self, text=None, images=None, videos=None, conversations=None, prompt=None, **kwargs):
+        """
+        Unified processor call to support both Hugging Face datasets and custom usage.
+        `text` is expected to be a list or str. Only the first element will be used if list.
+        """
+        # Extract prompt from `text` if provided
+        if prompt is None and text is not None:
+            if isinstance(text, list):
+                prompt = text[0]
+            else:
+                prompt = text
+
+        # Check for actual visual inputs (non-empty images/videos)
+        has_image = images is not None and isinstance(images, list) and len(images) > 0
+        has_video = videos is not None and isinstance(videos, list) and len(videos) > 0
+
+        # Only forward images/videos if present
+        if has_image or has_video:
+            return self.process_one(prompt=prompt, conversations=conversations, images=images, videos=videos)
+        else:
+            return self.process_one(prompt=prompt, conversations=conversations)
+
     
     def decode_text_to_image(self, generated_text: str) -> Image.Image:
         """
@@ -116,4 +195,17 @@ class VLChatProcessor(ProcessorMixin):
 
         image = Image.fromarray(image_tensor[0].cpu().numpy())
         return image
+
+    def apply_chat_template(self, conversation: List[Dict[str, str]], tokenize=False, add_generation_prompt=True):
+        """
+        Applies chat template with system prompt injected if not already present.
+        """
+        if conversation[0].get("role", "") != "system":
+            conversation = [{"role": "system", "content": self.system_prompt}] + conversation
+
+        return self.tokenizer.apply_chat_template(
+            conversation,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt
+        )
 

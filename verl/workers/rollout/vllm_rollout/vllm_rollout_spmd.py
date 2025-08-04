@@ -256,6 +256,7 @@ class vLLMRollout(BaseRollout):
         batch_size = idx.size(0)
 
         non_tensor_batch = prompts.non_tensor_batch
+        print(f"non_tensor_batch: {non_tensor_batch}")
         if "raw_prompt_ids" not in non_tensor_batch:
             non_tensor_batch["raw_prompt_ids"] = np.array(
                 [_pre_process_inputs(self.pad_token_id, idx[i]) for i in range(batch_size)], dtype=object
@@ -264,16 +265,23 @@ class vLLMRollout(BaseRollout):
         if batch_size != len(non_tensor_batch["raw_prompt_ids"]):
             raise RuntimeError("vllm sharding manager is not work properly.")
 
-        if "multi_modal_data" in non_tensor_batch:
+        # Check if multi_modal_data exists and is non-empty (i.e., at least one entry has data)
+        if (
+            "multi_modal_data" in non_tensor_batch
+            and any(bool(entry) for entry in non_tensor_batch["multi_modal_data"])
+        ):
             vllm_inputs = []
             for raw_prompt_ids, multi_modal_data in zip(
                 non_tensor_batch.pop("raw_prompt_ids"), non_tensor_batch.pop("multi_modal_data"), strict=True
             ):
                 vllm_inputs.append({"prompt_token_ids": raw_prompt_ids, "multi_modal_data": multi_modal_data})
         else:
+            # Clean up even if multi_modal_data exists but is empty
+            non_tensor_batch.pop("multi_modal_data", None)
             vllm_inputs = [
                 {"prompt_token_ids": raw_prompt_ids} for raw_prompt_ids in non_tensor_batch.pop("raw_prompt_ids")
             ]
+
 
         # ensure the type of `prompt_token_ids` passed to vllm is list[int]
         # https://github.com/volcengine/verl/pull/772
