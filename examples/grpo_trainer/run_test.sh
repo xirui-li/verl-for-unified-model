@@ -1,7 +1,7 @@
 set -x
 ENGINE=${1:-vllm}
 
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=5,6
 export HOME=/workspace/verl-for-unified-model
 export WANDB_API_KEY=7b8ef784250fec92ca3bf5f34c5c04834b9ec7c4
 
@@ -15,7 +15,7 @@ python3 -m verl.trainer.main_ppo \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.image_key=images \
-    actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct-2 \
+    actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=128 \

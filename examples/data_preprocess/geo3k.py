@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     data_source = "hiyouga/geometry3k"
 
-    dataset = datasets.load_dataset(data_source)
+    dataset = datasets.load_dataset(data_source, download_mode="force_redownload")
 
     train_dataset = dataset["train"]
     test_dataset = dataset["test"]

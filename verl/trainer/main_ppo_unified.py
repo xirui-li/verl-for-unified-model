@@ -30,7 +30,7 @@ from verl.utils.device import is_cuda_available
 from verl.utils.import_utils import load_extern_type
 
 
-@hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
+@hydra.main(config_path="config", config_name="ppo_trainer_unified", version_base=None)
 def main(config):
     """Main entry point for PPO training with Hydra configuration management.
 
@@ -116,12 +116,18 @@ class TaskRunner:
         )
 
         # Instantiate the tokenizer and processor.
-        from verl.utils import hf_processor, hf_tokenizer
+        if "tar" not in local_path.lower():
+            from verl.utils import hf_processor, hf_tokenizer
 
-        trust_remote_code = config.data.get("trust_remote_code", False)
-        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-        # Used for multimodal LLM, could be None
-        processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
+            trust_remote_code = config.data.get("trust_remote_code", False)
+            tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+            # Used for multimodal LLM, could be None
+            processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
+        else:
+            from tar.models import VLChatProcessor
+
+            processor = VLChatProcessor.from_pretrained(local_path, trust_remote_code=True)
+            tokenizer = processor.tokenizer
 
         # Define worker classes based on the actor strategy.
         if config.actor_rollout_ref.actor.strategy in {"fsdp", "fsdp2"}:
